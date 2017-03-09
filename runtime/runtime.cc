@@ -118,7 +118,6 @@ Runtime::Runtime()
       java_vm_(nullptr),
       fault_message_lock_("Fault message lock"),
       fault_message_(""),
-      method_verifier_lock_("Method verifiers lock"),
       threads_being_born_(0),
       shutdown_cond_(new ConditionVariable("Runtime shutdown", *Locks::runtime_shutdown_lock_)),
       shutting_down_(false),
@@ -144,6 +143,7 @@ Runtime::Runtime()
       suspend_handler_(nullptr),
       stack_overflow_handler_(nullptr),
       verify_(false),
+      continue_without_dex_(true),
       target_sdk_version_(0),
       implicit_null_checks_(false),
       implicit_so_checks_(false),
@@ -690,6 +690,7 @@ bool Runtime::Init(const RuntimeOptions& raw_options, bool ignore_unrecognized) 
   patchoat_executable_ = options->patchoat_executable_;
   must_relocate_ = options->must_relocate_;
   is_zygote_ = options->is_zygote_;
+  check_boot_ = options->check_boot_;
   is_explicit_gc_disabled_ = options->is_explicit_gc_disabled_;
   dex2oat_enabled_ = options->dex2oat_enabled_;
   image_dex2oat_enabled_ = options->image_dex2oat_enabled_;
@@ -714,6 +715,7 @@ bool Runtime::Init(const RuntimeOptions& raw_options, bool ignore_unrecognized) 
   intern_table_ = new InternTable;
 
   verify_ = options->verify_;
+  continue_without_dex_ = options->continue_without_dex_;
 
   if (options->interpreter_only_) {
     GetInstrumentation()->ForceInterpretOnly();
@@ -1168,7 +1170,7 @@ void Runtime::VisitNonThreadRoots(RootCallback* callback, void* arg) {
   }
   verifier::MethodVerifier::VisitStaticRoots(callback, arg);
   {
-    MutexLock mu(Thread::Current(), method_verifier_lock_);
+    MutexLock mu(Thread::Current(), *Locks::method_verifiers_lock_);
     for (verifier::MethodVerifier* verifier : method_verifiers_) {
       verifier->VisitRoots(callback, arg);
     }
@@ -1334,13 +1336,13 @@ void Runtime::SetCompileTimeClassPath(jobject class_loader,
 
 void Runtime::AddMethodVerifier(verifier::MethodVerifier* verifier) {
   DCHECK(verifier != nullptr);
-  MutexLock mu(Thread::Current(), method_verifier_lock_);
+  MutexLock mu(Thread::Current(), *Locks::method_verifiers_lock_);
   method_verifiers_.insert(verifier);
 }
 
 void Runtime::RemoveMethodVerifier(verifier::MethodVerifier* verifier) {
   DCHECK(verifier != nullptr);
-  MutexLock mu(Thread::Current(), method_verifier_lock_);
+  MutexLock mu(Thread::Current(), *Locks::method_verifiers_lock_);
   auto it = method_verifiers_.find(verifier);
   CHECK(it != method_verifiers_.end());
   method_verifiers_.erase(it);

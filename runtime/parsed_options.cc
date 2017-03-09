@@ -227,9 +227,11 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
 
   compiler_callbacks_ = nullptr;
   is_zygote_ = false;
+  check_boot_ = true;
   must_relocate_ = kDefaultMustRelocate;
   dex2oat_enabled_ = true;
   image_dex2oat_enabled_ = true;
+  continue_without_dex_ = true;
   if (kPoisonHeapReferences) {
     // kPoisonHeapReferences currently works only with the interpreter only.
     // TODO: make it work with the compiler.
@@ -308,6 +310,8 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
       }
     } else if (StartsWith(option, "-Xcheck:jni")) {
       check_jni_ = true;
+    } else if (StartsWith(option, "-Xcheckboot")) {
+      check_boot_ = false;
     } else if (StartsWith(option, "-Xrunjdwp:") || StartsWith(option, "-agentlib:jdwp=")) {
       std::string tail(option.substr(option[1] == 'X' ? 10 : 15));
       // TODO: move parsing logic out of Dbg
@@ -624,6 +628,8 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
         Usage("Unknown -Xverify option %s\n", verify_mode.c_str());
         return false;
       }
+    } else if (option == "-Xno-continue-without-dex") {
+      continue_without_dex_ = false;
     } else if (StartsWith(option, "-XX:NativeBridge=")) {
       if (!ParseStringAfterChar(option, '=', &native_bridge_library_filename_)) {
         return false;
@@ -669,11 +675,16 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
       return false;
     }
   }
-  // If not set, background collector type defaults to homogeneous compaction
-  // if not low memory mode, semispace otherwise.
+  // If not set, background collector type defaults to homogeneous compaction.
+  // If foreground is GSS, use GSS as background collector.
+  // If not low memory mode, semispace otherwise.
   if (background_collector_type_ == gc::kCollectorTypeNone) {
-    background_collector_type_ = low_memory_mode_ ?
-        gc::kCollectorTypeSS : gc::kCollectorTypeHomogeneousSpaceCompact;
+    if (collector_type_ != gc::kCollectorTypeGSS) {
+      background_collector_type_ = low_memory_mode_ ?
+          gc::kCollectorTypeSS : gc::kCollectorTypeHomogeneousSpaceCompact;
+    } else {
+      background_collector_type_ = collector_type_;
+    }
   }
 
   // If a reference to the dalvik core.jar snuck in, replace it with
@@ -699,9 +710,6 @@ bool ParsedOptions::Parse(const RuntimeOptions& options, bool ignore_unrecognize
   }
   if (heap_growth_limit_ == 0) {
     heap_growth_limit_ = heap_maximum_size_;
-  }
-  if (background_collector_type_ == gc::kCollectorTypeNone) {
-    background_collector_type_ = collector_type_;
   }
   return true;
 }  // NOLINT(readability/fn_size)

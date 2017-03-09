@@ -122,6 +122,10 @@ class Runtime {
     return is_zygote_;
   }
 
+  bool IsCheckBoot() const {
+    return check_boot_;
+  }
+
   bool IsExplicitGcDisabled() const {
     return is_explicit_gc_disabled_;
   }
@@ -419,9 +423,10 @@ class Runtime {
     return use_compile_time_class_path_;
   }
 
-  void AddMethodVerifier(verifier::MethodVerifier* verifier) LOCKS_EXCLUDED(method_verifier_lock_);
+  void AddMethodVerifier(verifier::MethodVerifier* verifier)
+      LOCKS_EXCLUDED(Locks::method_verifiers_lock_);
   void RemoveMethodVerifier(verifier::MethodVerifier* verifier)
-      LOCKS_EXCLUDED(method_verifier_lock_);
+      LOCKS_EXCLUDED(Locks::method_verifiers_lock_);
 
   const std::vector<const DexFile*>& GetCompileTimeClassPath(jobject class_loader);
   void SetCompileTimeClassPath(jobject class_loader, std::vector<const DexFile*>& class_path);
@@ -475,6 +480,10 @@ class Runtime {
 
   bool IsVerificationEnabled() const {
     return verify_;
+  }
+
+  bool GetContinueWithoutDex() const {
+    return continue_without_dex_;
   }
 
   bool RunningOnValgrind() const {
@@ -533,6 +542,7 @@ class Runtime {
 
   CompilerCallbacks* compiler_callbacks_;
   bool is_zygote_;
+  bool check_boot_;
   bool must_relocate_;
   bool is_concurrent_gc_enabled_;
   bool is_explicit_gc_disabled_;
@@ -575,8 +585,7 @@ class Runtime {
   std::string fault_message_ GUARDED_BY(fault_message_lock_);
 
   // Method verifier set, used so that we can update their GC roots.
-  Mutex method_verifier_lock_ DEFAULT_MUTEX_ACQUIRED_AFTER;
-  std::set<verifier::MethodVerifier*> method_verifiers_;
+  std::set<verifier::MethodVerifier*> method_verifiers_ GUARDED_BY(Locks::method_verifiers_lock_);
 
   // A non-zero value indicates that a thread has been created but not yet initialized. Guarded by
   // the shutdown lock so that threads aren't born while we're shutting down.
@@ -640,6 +649,7 @@ class Runtime {
 
   // If false, verification is disabled. True by default.
   bool verify_;
+  bool continue_without_dex_;
 
   // Specifies target SDK version to allow workarounds for certain API levels.
   int32_t target_sdk_version_;
